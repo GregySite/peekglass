@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Peekglass — recherche d'images</title>
+    <meta name="description" content="Tape un mot, explore les images dans un diagramme de Voronoï vivant." />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="voroforce"></div>
+
+    <div class="ui">
+      <header class="top">
+        <a class="brand" href="./" aria-label="Accueil">peekglass</a>
+        <form class="search" id="search-form" role="search" autocomplete="off">
+          <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            id="q"
+            name="q"
+            type="search"
+            enterkeyhint="search"
+            placeholder="Rechercher des images…"
+            aria-label="Rechercher des images"
+            spellcheck="false"
+          />
+          <button type="submit" aria-label="Lancer la recherche">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          </button>
+          <div class="progress" id="progress"></div>
+        </form>
+        <div class="status" id="status"></div>
+        <div class="chips" id="chips"></div>
+      </header>
+
+      <div class="caption" id="caption"></div>
+
+      <aside class="card" id="card" aria-hidden="true">
+        <button class="card-close" id="card-close" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <div class="card-media"><img id="card-img" alt="" /></div>
+        <div class="card-body">
+          <h2 id="card-title"></h2>
+          <p id="card-author"></p>
+          <div class="card-actions">
+            <a id="card-link" target="_blank" rel="noopener">Voir sur Pixabay ↗</a>
+            <a id="card-full" target="_blank" rel="noopener">Ouvrir l'image</a>
+          </div>
+        </div>
+      </aside>
+
+      <div class="hint" id="hint">
+        <span class="mouse-only">Survole pour la loupe · clic pour ouvrir · molette pour zoomer</span>
+        <span class="touch-only">Glisse pour explorer · touche pour ouvrir</span>
+      </div>
+
+      <footer class="credits">
+        Images <a href="https://pixabay.com/" target="_blank" rel="noopener">Pixabay</a> ·
+        effet <a href="https://github.com/gnovotny/nothing-to-watch" target="_blank" rel="noopener">nothing-to-watch</a>
+      </footer>
+    </div>
+
+    <div class="fatal" id="fatal" hidden></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
