@@ -8,99 +8,131 @@ export type AtlasVersion = {
   tileHeight: number
 }
 
-type Layer = { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }
-
-const loadBitmap = async (src: string, signal?: AbortSignal) => {
-  if (src.startsWith('data:')) {
-    const img = new Image()
-    img.src = src
-    await img.decode()
-    return img
-  }
-  const res = await fetch(src, { signal, mode: 'cors' })
-  if (!res.ok) throw new Error(`image ${res.status}`)
-  return createImageBitmap(await res.blob())
+export type TileSink = {
+  /** replace a whole layer (used to clear) */
+  layer: (versionIndex: number, layer: number, source: TexImageSource) => void
+  /** replace one tile region */
+  tile: (
+    versionIndex: number,
+    layer: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    source: TexImageSource,
+  ) => void
 }
 
+const decode = (src: string, signal?: AbortSignal) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.decoding = 'async'
+    const abort = () => {
+      img.src = ''
+      reject(new DOMException('aborted', 'AbortError'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    img.onload = () => {
+      signal?.removeEventListener('abort', abort)
+      img.decode().then(() => resolve(img), () => resolve(img))
+    }
+    img.onerror = () => {
+      signal?.removeEventListener('abort', abort)
+      reject(new Error(`image failed: ${src.slice(0, 80)}`))
+    }
+    img.src = src
+  })
+
 /**
- * Builds the texture atlases (one canvas per media version and layer) from a
- * list of search images. Tile t shows image t % images.length, so a small
- * result set still fills the whole grid.
+ * Feeds the GPU texture arrays tile by tile: each image is decoded once
+ * (async), cropped/resized into one small canvas per resolution, then uploaded
+ * only into its own tile regions (no full-atlas re-uploads). Tile t shows image t % n, so a small
+ * result set still fills the whole wall.
  */
 export class Atlas {
-  layers: Layer[][]
   capacity: number
+  private blanks: HTMLCanvasElement[] = []
 
-  constructor(public versions: AtlasVersion[]) {
-    this.layers = versions.map((v) =>
-      Array.from({ length: v.layers }, () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = v.cols * v.tileWidth
-        canvas.height = v.rows * v.tileHeight
-        const ctx = canvas.getContext('2d', { alpha: false })!
-        ctx.imageSmoothingQuality = 'high'
-        return { canvas, ctx }
-      }),
-    )
+  constructor(
+    public versions: AtlasVersion[],
+    private sink: TileSink,
+  ) {
     const v0 = versions[0]
     this.capacity = v0.cols * v0.rows * v0.layers
   }
 
   clear(color = '#0b0b0b') {
-    this.layers.flat().forEach(({ canvas, ctx }) => {
-      ctx.fillStyle = color
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
+    this.versions.forEach((v, vi) => {
+      let blank = this.blanks[vi]
+      if (!blank) {
+        blank = document.createElement('canvas')
+        blank.width = v.cols * v.tileWidth
+        blank.height = v.rows * v.tileHeight
+        const ctx = blank.getContext('2d')!
+        ctx.fillStyle = color
+        ctx.fillRect(0, 0, blank.width, blank.height)
+        this.blanks[vi] = blank
+      }
+      for (let l = 0; l < v.layers; l++) this.sink.layer(vi, l, blank)
     })
   }
 
-  private drawTile(
-    image: CanvasImageSource & { width: number; height: number },
-    tile: number,
-  ) {
-    this.versions.forEach((v, vi) => {
-      const perLayer = v.cols * v.rows
-      const layer = Math.floor(tile / perLayer) % v.layers
-      const idx = tile % perLayer
-      const col = idx % v.cols
-      const row = Math.floor(idx / v.cols)
-      const { ctx } = this.layers[vi][layer]
-      // cover crop
-      const iw = image.width
-      const ih = image.height
+  private tilesFor(img: HTMLImageElement) {
+    const iw = img.naturalWidth
+    const ih = img.naturalHeight
+    return this.versions.map((v) => {
       const target = v.tileWidth / v.tileHeight
       let sw = iw
       let sh = ih
       if (iw / ih > target) sw = ih * target
       else sh = iw / target
-      const sx = (iw - sw) / 2
-      const sy = (ih - sh) / 2
+      const c = document.createElement('canvas')
+      c.width = v.tileWidth
+      c.height = v.tileHeight
+      const ctx = c.getContext('2d', { alpha: false })!
+      ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(
-        image,
-        sx,
-        sy,
+        img,
+        (iw - sw) / 2,
+        (ih - sh) / 2,
         sw,
         sh,
-        col * v.tileWidth,
-        row * v.tileHeight,
+        0,
+        0,
         v.tileWidth,
         v.tileHeight,
+      )
+      return c
+    })
+  }
+
+  private place(tiles: HTMLCanvasElement[], tile: number) {
+    this.versions.forEach((v, vi) => {
+      const perLayer = v.cols * v.rows
+      const layer = Math.floor(tile / perLayer) % v.layers
+      const idx = tile % perLayer
+      this.sink.tile(
+        vi,
+        layer,
+        (idx % v.cols) * v.tileWidth,
+        Math.floor(idx / v.cols) * v.tileHeight,
+        v.tileWidth,
+        v.tileHeight,
+        tiles[vi],
       )
     })
   }
 
-  /**
-   * Loads every image and draws it in all of its tiles. Calls onUpdate (throttled)
-   * whenever the canvases changed so they can be uploaded to the GPU.
-   */
   async fill(
     images: SearchImage[],
     {
       signal,
-      onUpdate,
-      concurrency = 10,
+      onProgress,
+      concurrency = 8,
     }: {
       signal?: AbortSignal
-      onUpdate?: (loaded: number, total: number) => void
+      onProgress?: (loaded: number, total: number) => void
       concurrency?: number
     } = {},
   ) {
@@ -108,40 +140,28 @@ export class Atlas {
     if (!n) return 0
     let next = 0
     let loaded = 0
-    let dirty = false
-    const flush = () => {
-      if (!dirty || signal?.aborted) return
-      dirty = false
-      onUpdate?.(loaded, n)
-    }
-    const timer = setInterval(flush, 250)
 
     const worker = async () => {
       while (next < n && !signal?.aborted) {
         const i = next++
+        const img = images[i]
         try {
-          const img = images[i]
-          const bmp = await loadBitmap(img.thumb, signal).catch((e) => {
+          const bmp = await decode(img.thumb, signal).catch((e) => {
             if (!img.fallback || signal?.aborted) throw e
-            return loadBitmap(img.fallback, signal)
+            return decode(img.fallback, signal)
           })
           if (signal?.aborted) return
-          for (let t = i; t < this.capacity; t += n) this.drawTile(bmp, t)
-          if ('close' in bmp) bmp.close()
+          const tiles = this.tilesFor(bmp)
+          for (let t = i; t < this.capacity; t += n) this.place(tiles, t)
           loaded++
-          dirty = true
+          onProgress?.(loaded, n)
         } catch (e) {
           if (signal?.aborted) return
-          console.warn('image failed', images[i].thumb, e)
+          console.warn('image failed', img.thumb, e)
         }
       }
     }
-    try {
-      await Promise.all(Array.from({ length: concurrency }, worker))
-    } finally {
-      clearInterval(timer)
-    }
-    flush()
+    await Promise.all(Array.from({ length: concurrency }, worker))
     return loaded
   }
 }

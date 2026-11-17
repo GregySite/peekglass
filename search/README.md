@@ -21,6 +21,8 @@ Paramètres d'URL utiles :
 | `?cells=1500` | nombre de cellules (défaut 1000 desktop, 600 mobile) |
 | `?size=7` | taille des cellules en % de l'écran (défaut 5.5 desktop, 8.5 mobile) |
 | `?key=…` | autre clé API Pixabay (mémorisée dans le navigateur) |
+| `?mt=0` | désactive la simulation multi-thread |
+| `?nocoi=1` | n'enregistre pas le service worker d'isolation |
 | `#dev` | panneau de réglages du moteur (tweakpane) |
 
 ## Comment ça marche
@@ -36,6 +38,11 @@ Paramètres d'URL utiles :
 - **Intégration** (`search/src/vf.ts`) : reprend la config et les modes du site
   (`app/vf/config`, presets `mobile`), les transitions d'uniforms et la logique
   preview / select, sans React ni store.
+- **Fluidité** : sur ordinateur (Chrome, Edge, Firefox), `coi-serviceworker.js`
+  rend la page « cross-origin isolated » sur GitHub Pages, ce qui débloque
+  `SharedArrayBuffer` : la simulation tourne alors dans des Web Workers et le rendu
+  en parallèle, comme sur le site original. Les images sont décodées en asynchrone
+  et envoyées au GPU tuile par tuile (budget par frame), sans ré-upload d'atlas.
 - **UI** (`search/src/main.ts`) : barre de recherche, légende de l'image survolée,
   fiche détaillée au clic (Échap pour fermer).
 

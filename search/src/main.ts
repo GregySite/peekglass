@@ -46,19 +46,15 @@ if (!hasWebGL2()) {
 }
 
 const engine = createEngine(container)
-const atlas = new Atlas(ATLAS_VERSIONS)
+const atlas = new Atlas(ATLAS_VERSIONS, {
+  layer: engine.uploadLayer,
+  tile: engine.uploadTile,
+})
 atlas.clear()
 
 let results: SearchImage[] = []
 let controller: AbortController | undefined
 let currentQuery = ''
-
-const uploadAll = () => {
-  atlas.layers.forEach((layers, v) =>
-    layers.forEach(({ canvas }, l) => engine.uploadLayer(v, l, canvas)),
-  )
-}
-uploadAll()
 
 const imageForCell = (cell?: VoroforceCell): SearchImage | undefined => {
   if (!cell || !results.length) return
@@ -187,13 +183,11 @@ async function runSearch(query: string, { push = true } = {}) {
   caption.classList.remove('on')
   results = found
   atlas.clear()
-  uploadAll()
   engine.shake()
 
   const loaded = await atlas.fill(found, {
     signal: ctrl.signal,
-    onUpdate: (n, total) => {
-      uploadAll()
+    onProgress: (n, total) => {
       setProgress(0.1 + 0.9 * (n / total))
       container.classList.add('ready')
     },

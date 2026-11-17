@@ -87,31 +87,47 @@ export class CanvasMediaGridArrayTexture extends Texture {
       this.glState.premultiplyAlpha = false
     }
 
-    // only the latest update per layer matters
-    const latest = new Map()
-    this.pendingLayerUpdates.forEach(({ index, bytes }) => {
-      latest.set(index, bytes)
-    })
-    latest.forEach((bytes, index) => {
-      if (index >= this.length) return
+    // FIFO, with a per-frame budget so big batches never cause a hitch
+    let budget = this.maxUploadsPerFrame
+    while (this.pendingLayerUpdates.length && budget-- > 0) {
+      const u = this.pendingLayerUpdates.shift()
+      if (u.layer >= this.length) continue
       gl.texSubImage3D(
         gl.TEXTURE_2D_ARRAY,
         0,
-        0,
-        0,
-        index,
-        this.width,
-        this.height,
+        u.x,
+        u.y,
+        u.layer,
+        u.width,
+        u.height,
         1,
         gl.RGBA,
         gl.UNSIGNED_BYTE,
-        bytes,
+        u.source,
       )
-    })
-    this.pendingLayerUpdates = []
+    }
   }
 
-  prepareLayerUpdate(index, bytes) {
-    this.pendingLayerUpdates.push({ index, bytes })
+  maxUploadsPerFrame = 48
+
+  /** Whole layer (e.g. a cleared canvas) */
+  prepareLayerUpdate(layer, source) {
+    // a full-layer upload supersedes everything queued before it for that layer
+    this.pendingLayerUpdates = this.pendingLayerUpdates.filter(
+      (u) => u.layer !== layer,
+    )
+    this.pendingLayerUpdates.push({
+      layer,
+      x: 0,
+      y: 0,
+      width: this.width,
+      height: this.height,
+      source,
+    })
+  }
+
+  /** Single tile region */
+  prepareTileUpdate(layer, x, y, width, height, source) {
+    this.pendingLayerUpdates.push({ layer, x, y, width, height, source })
   }
 }

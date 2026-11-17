@@ -6,6 +6,18 @@
     <title>Peekglass — recherche d'images</title>
     <meta name="description" content="Tape un mot, explore les images dans un diagramme de Voronoï vivant." />
     <meta name="theme-color" content="#000000" />
+    <!-- Cross-origin isolation on GitHub Pages (lets the simulation run in Web Workers).
+         Desktop Chrome/Edge/Firefox only: elsewhere the engine stays single-threaded. -->
+    <script>
+      window.coi = {
+        shouldRegister: () =>
+          !!(window.chrome || window.netscape) &&
+          !('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+          !new URLSearchParams(location.search).has('nocoi'),
+        quiet: true,
+      }
+    </script>
+    <script src="./coi-serviceworker.min.js"></script>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

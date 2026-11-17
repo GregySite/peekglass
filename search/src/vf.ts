@@ -43,13 +43,35 @@ const mediaConfig = {
     height: v.rows * v.tileHeight,
     type: 'canvas-grid',
     // layers are uploaded by the app (see uploadLayer), never fetched by the loader
-    layerSrcFormat: () => undefined,
+    // (empty string = nothing to load; must stay serialisable for the workers)
+    layerSrcFormat: '',
   })),
+}
+
+type GridTexture = {
+  prepareLayerUpdate: (layer: number, src: TexImageSource) => void
+  prepareTileUpdate: (
+    layer: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    src: TexImageSource,
+  ) => void
 }
 
 export type Engine = {
   vf: VoroforceInstance
   uploadLayer: (versionIndex: number, layerIndex: number, src: TexImageSource) => void
+  uploadTile: (
+    versionIndex: number,
+    layer: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    src: TexImageSource,
+  ) => void
   setMode: (mode: VOROFORCE_MODE) => void
   getMode: () => VOROFORCE_MODE
   deselect: () => void
@@ -78,9 +100,14 @@ export function createEngine(container: HTMLElement): Engine {
         : 0.055,
     autoTargetMediaVersion1SubgridCount: 100,
   }
+  // Simulation in Web Workers (like the original site) needs SharedArrayBuffer,
+  // i.e. a cross-origin isolated page: coi-serviceworker.js provides it on GitHub Pages.
+  // Kept off on mobile, as in the original mobile preset.
+  const mt =
+    !mobile && self.crossOriginIsolated === true && params.get('mt') !== '0'
   config.multiThreading = {
-    enabled: false, // needs COOP/COEP headers (not available on GitHub Pages)
-    renderInParallel: false,
+    enabled: mt,
+    renderInParallel: mt,
   }
   config.devTools = { ...config.devTools, enabled: params.has('dev') }
   config.modes = {}
@@ -165,15 +192,17 @@ export function createEngine(container: HTMLElement): Engine {
     }
   }) as unknown as EventListener)
 
-  const scene = () =>
-    (vf.display as unknown as {
-      scene: { compressedMediaGridTextures: { prepareLayerUpdate: (i: number, s: TexImageSource) => void }[] }
-    }).scene
+  const textures = () =>
+    (vf.display as unknown as { scene: { compressedMediaGridTextures: GridTexture[] } })
+      .scene.compressedMediaGridTextures
 
   return {
     vf,
     uploadLayer: (versionIndex, layerIndex, src) => {
-      scene().compressedMediaGridTextures[versionIndex]?.prepareLayerUpdate(layerIndex, src)
+      textures()[versionIndex]?.prepareLayerUpdate(layerIndex, src)
+    },
+    uploadTile: (versionIndex, layer, x, y, w, h, src) => {
+      textures()[versionIndex]?.prepareTileUpdate(layer, x, y, w, h, src)
     },
     setMode,
     getMode: () => mode,
