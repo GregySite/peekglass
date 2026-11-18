@@ -45,6 +45,20 @@ if (!hasWebGL2()) {
   throw new Error('WebGL2 not supported')
 }
 
+// the engine needs real dimensions to build its lattice (a hidden / background
+// tab can report 0×0 at load): wait until the container has a size
+await new Promise<void>((resolve) => {
+  const ok = () => container.clientWidth > 0 && container.clientHeight > 0
+  if (ok()) return resolve()
+  const ro = new ResizeObserver(() => {
+    if (ok()) {
+      ro.disconnect()
+      resolve()
+    }
+  })
+  ro.observe(container)
+})
+
 const engine = createEngine(container)
 const atlas = new Atlas(ATLAS_VERSIONS, {
   layer: engine.uploadLayer,

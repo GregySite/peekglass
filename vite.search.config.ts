@@ -16,6 +16,7 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'es2022', // top-level await
     outDir: resolve(__dirname, 'dist-search'),
     emptyOutDir: true,
   },

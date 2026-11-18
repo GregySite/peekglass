@@ -170,8 +170,17 @@ export function generateCenterOutwardSubgridsAndAssignCellIds(
   let stepsTaken = 0
   let directionChanges = 0
 
+  // Safety: once the spiral is entirely outside the grid, nothing more can be
+  // added (e.g. degenerate lattice when the container had no size) → stop
+  const maxRing =
+    Math.ceil(
+      Math.max(totalRows / SUBGRID_ROWS, totalCols / SUBGRID_COLS) / 2,
+    ) + 2
+
   // Continue until we've used all elements
   while (remainingElements > 0 && result.length < elementCount) {
+    if (Math.max(Math.abs(currentGridRow), Math.abs(currentGridCol)) > maxRing)
+      break
     // Move in current direction
     const [rowDelta, colDelta] = dirMovements[direction]
     currentGridRow += rowDelta
