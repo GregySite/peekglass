@@ -111,6 +111,22 @@ export function createEngine(container: HTMLElement): Engine {
     renderInParallel: mt,
   }
   config.devTools = { ...config.devTools, enabled: params.has('dev') }
+
+  // Pixel search (extra index lookups around each pixel) only matters with tens
+  // of thousands of tiny cells; with ~1000 big cells the neighbour search is
+  // enough. Same trick as the original mobile preset: on for the first frames
+  // only. ?ps=1 keeps it on.
+  if (params.get('ps') !== '1') {
+    const mainUniforms = config.display.scene.main.uniforms
+    mainUniforms.fPixelSearchRadiusMod = {
+      transition: true,
+      initial: { value: 1 },
+      modes: {
+        default: { value: 0 },
+        [VOROFORCE_MODE.select]: { value: 0 },
+      },
+    }
+  }
   config.modes = {}
 
   let mode = VOROFORCE_MODE.preview
