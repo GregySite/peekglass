@@ -20,10 +20,23 @@ Paramètres d'URL utiles :
 | `?mock=1` | images générées localement, sans réseau (tests) |
 | `?cells=1500` | nombre de cellules (défaut 1000 desktop, 600 mobile) |
 | `?size=7` | taille des cellules en % de l'écran (défaut 5.5 desktop, 8.5 mobile) |
-| `?key=…` | autre clé API Pixabay (mémorisée dans le navigateur) |
+| `?unsplash=…` `?pexels=…` `?key=…` | clés API Unsplash / Pexels / Pixabay (mémorisées dans le navigateur) |
 | `?mt=0` | désactive la simulation multi-thread |
 | `?nocoi=1` | n'enregistre pas le service worker d'isolation |
 | `#dev` | panneau de réglages du moteur (tweakpane) |
+
+## Sources d'images
+
+Clés dans `search/src/keys.ts` (une source sans clé est ignorée) :
+
+- **Unsplash** — photos les plus soignées, 2 pages = 60 photos par recherche
+  (offre gratuite : 50 requêtes/heure ≈ 25 recherches).
+- **Pexels** — 80 photos par recherche (200 requêtes/heure, 20 000/mois).
+- **Pixabay** — complète jusqu'à 200 images.
+
+Unsplash et Pexels sont entremêlés et placés en premier (au centre du mur),
+Pixabay vient ensuite. Si une source échoue (limite atteinte…), les autres
+suffisent.
 
 ## Comment ça marche
 

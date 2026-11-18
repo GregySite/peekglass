@@ -28,7 +28,8 @@ const mobile = isTouchDevice || window.innerWidth < 768
 export const ATLAS_VERSIONS: AtlasVersion[] = [
   { tileWidth: 40, tileHeight: 60 },
   { tileWidth: 100, tileHeight: 150 },
-  mobile ? { tileWidth: 120, tileHeight: 180 } : { tileWidth: 150, tileHeight: 225 },
+  // sharpest version, used around the pointer / for the selected cell
+  mobile ? { tileWidth: 160, tileHeight: 240 } : { tileWidth: 200, tileHeight: 300 },
 ].map((t) => ({ ...t, cols: MEDIA_COLS, rows: MEDIA_ROWS, layers: MEDIA_LAYERS }))
 
 const mediaConfig = {

@@ -1,7 +1,7 @@
 import './style.css'
 import type { VoroforceCell } from '@/vf/types'
 import { Atlas } from './atlas'
-import { type SearchImage, search } from './sources'
+import { type SearchImage, type SearchResult, search } from './sources'
 import { ATLAS_VERSIONS, MEDIA_CAPACITY, createEngine } from './vf'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -84,9 +84,28 @@ const openCard = (img: SearchImage) => {
   $<HTMLImageElement>('card-img').src = img.full
   $<HTMLImageElement>('card-img').alt = img.title
   $('card-title').textContent = img.title || 'Sans titre'
-  $('card-author').textContent = `par ${img.author}`
-  $<HTMLAnchorElement>('card-link').href = img.page
-  $<HTMLAnchorElement>('card-full').href = img.full
+  const author = $('card-author')
+  author.textContent = 'par '
+  if (img.authorUrl) {
+    const a = document.createElement('a')
+    a.href = img.authorUrl
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.textContent = img.author
+    author.append(a)
+  } else {
+    author.append(img.author)
+  }
+  author.append(` · ${img.source}`)
+  const link = $<HTMLAnchorElement>('card-link')
+  link.href = img.page
+  link.textContent = `Voir sur ${img.source} ↗`
+  const full = $<HTMLAnchorElement>('card-full')
+  full.href = img.full
+  full.onclick = () => {
+    // Unsplash API guidelines: register the "download" when a photo is opened
+    if (img.downloadPing) fetch(img.downloadPing).catch(() => {})
+  }
   card.classList.add('on')
   card.setAttribute('aria-hidden', 'false')
   caption.classList.remove('on')
@@ -111,7 +130,7 @@ engine.onFocus((cell) => {
   caption.innerHTML = ''
   caption.append(img.title || '')
   const small = document.createElement('small')
-  small.textContent = img.author
+  small.textContent = `${img.author} · ${img.source}`
   caption.append(small)
   caption.classList.add('on')
 })
@@ -161,9 +180,9 @@ async function runSearch(query: string, { push = true } = {}) {
   }
   document.title = `${q} — Peekglass`
 
-  let found: SearchImage[]
+  let result: SearchResult
   try {
-    found = await search(q, MEDIA_CAPACITY, ctrl.signal)
+    result = await search(q, MEDIA_CAPACITY, ctrl.signal)
   } catch (e) {
     if (ctrl.signal.aborted) return
     setProgress(null)
@@ -171,10 +190,17 @@ async function runSearch(query: string, { push = true } = {}) {
     return
   }
   if (ctrl.signal.aborted) return
+  const found = result.images
+  result.failures.forEach((f) => console.warn(f.source, f.message))
 
   if (!found.length) {
     setProgress(null)
-    setStatus(`Aucune image pour « ${q} » — essaie un autre mot`, true)
+    setStatus(
+      result.failures.length && !result.sources.length
+        ? result.failures.map((f) => f.message).join(' · ')
+        : `Aucune image pour « ${q} » — essaie un autre mot`,
+      true,
+    )
     return
   }
 
@@ -199,7 +225,12 @@ async function runSearch(query: string, { push = true } = {}) {
     setStatus("Les images n'ont pas pu être chargées", true)
     return
   }
-  setStatus(`${found.length} image${found.length > 1 ? 's' : ''} pour « ${q} »`)
+  const failed = result.failures.length
+    ? ` · ${result.failures.map((f) => f.source).join(', ')} indisponible`
+    : ''
+  setStatus(
+    `${found.length} image${found.length > 1 ? 's' : ''} pour « ${q} » · ${result.sources.join(', ')}${failed}`,
+  )
 }
 
 form.addEventListener('submit', (e) => {

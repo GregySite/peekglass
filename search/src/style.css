@@ -296,6 +296,11 @@ body {
   font-size: 13px;
   color: var(--muted);
 }
+.card p a {
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
 .card-actions {
   display: flex;
   gap: 8px;
