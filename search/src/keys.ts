@@ -6,7 +6,7 @@
 // Pexels   : https://www.pexels.com/api/new/
 // Pixabay  : https://pixabay.com/api/docs/
 export const KEYS = {
-  unsplash: '',
-  pexels: '',
+  unsplash: 'gO4Nf4Rt5Z7GxWwO1LsnMYuKOvZ9vYeFqNfuxsubkW0',
+  pexels: 'KOaiYzHOatqQD4Fe8XZIJ6n2yebn2qN53DfwFToeJHHd5hFtCCgZGOTP',
   pixabay: '56097629-273982d2666f273ddb23221c6',
 }
