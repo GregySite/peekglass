@@ -22,9 +22,10 @@ export type SearchResult = {
   failures: { source: SourceName; message: string }[]
 }
 
-/** Size requested from the image CDNs for the atlas tiles (2:3, a bit above tile size). */
-const THUMB_W = 300
-const THUMB_H = 450
+/** Size requested from the image CDNs for the atlas tiles (2:3, a bit above the
+ * largest tile, 120×180). Small = fast to load 1000 of them. */
+const THUMB_W = 180
+const THUMB_H = 270
 const APP = 'peekglass'
 
 const params = new URLSearchParams(window.location.search)
@@ -111,17 +112,34 @@ type PexelsPhoto = {
   src: { original: string; large2x: string; large: string; medium: string }
 }
 
-async function searchPexels(query: string, signal?: AbortSignal) {
+async function searchPexels(query: string, limit: number, signal?: AbortSignal) {
   const key = getKey('pexels', 'pexels')
   if (!key) return []
-  const url = new URL('https://api.pexels.com/v1/search')
-  url.searchParams.set('query', query)
-  url.searchParams.set('per_page', '80')
-  url.searchParams.set('locale', 'fr-FR')
-  const res = await fetch(url, { signal, headers: { Authorization: key } })
-  if (!res.ok) throw httpError('Pexels', res.status)
-  const data = (await res.json()) as { photos: PexelsPhoto[] }
-  return data.photos.map(
+  const PER_PAGE = 80
+  const page = async (n: number) => {
+    const url = new URL('https://api.pexels.com/v1/search')
+    url.searchParams.set('query', query)
+    url.searchParams.set('per_page', String(PER_PAGE))
+    url.searchParams.set('page', String(n))
+    url.searchParams.set('locale', 'fr-FR')
+    const res = await fetch(url, { signal, headers: { Authorization: key } })
+    if (!res.ok) throw httpError('Pexels', res.status)
+    return (await res.json()) as { photos: PexelsPhoto[]; total_results: number }
+  }
+  const first = await page(1)
+  // more pages only if they exist (200 requests / hour on the free plan)
+  const pages = Math.min(
+    Math.ceil(first.total_results / PER_PAGE),
+    Math.ceil(limit / PER_PAGE),
+  )
+  const rest = await Promise.allSettled(
+    Array.from({ length: Math.max(0, pages - 1) }, (_, i) => page(i + 2)),
+  )
+  const photos = [
+    ...first.photos,
+    ...rest.flatMap((r) => (r.status === 'fulfilled' ? r.value.photos : [])),
+  ]
+  return photos.map(
     (p): SearchImage => ({
       id: `p-${p.id}`,
       source: 'Pexels',
@@ -150,23 +168,38 @@ type PixabayHit = {
 async function searchPixabay(query: string, limit: number, signal?: AbortSignal) {
   const key = getKey('pixabay', 'key')
   if (!key) return []
-  const url = new URL('https://pixabay.com/api/')
-  url.searchParams.set('key', key)
-  url.searchParams.set('q', query.slice(0, 100))
-  url.searchParams.set('image_type', 'photo')
-  url.searchParams.set('per_page', String(Math.max(3, Math.min(200, limit))))
-  url.searchParams.set('safesearch', 'true')
-  url.searchParams.set('editors_choice', 'false')
-  url.searchParams.set('order', 'popular')
-  url.searchParams.set('lang', 'fr')
-  const res = await fetch(url, { signal })
-  if (!res.ok) throw httpError('Pixabay', res.status)
-  const data = (await res.json()) as { hits: PixabayHit[] }
-  return data.hits.map(
+  const PER_PAGE = 200
+  const page = async (n: number) => {
+    const url = new URL('https://pixabay.com/api/')
+    url.searchParams.set('key', key)
+    url.searchParams.set('q', query.slice(0, 100))
+    url.searchParams.set('image_type', 'photo')
+    url.searchParams.set('per_page', String(PER_PAGE))
+    url.searchParams.set('page', String(n))
+    url.searchParams.set('safesearch', 'true')
+    url.searchParams.set('order', 'popular')
+    url.searchParams.set('lang', 'fr')
+    const res = await fetch(url, { signal })
+    if (!res.ok) throw httpError('Pixabay', res.status)
+    return (await res.json()) as { hits: PixabayHit[]; totalHits: number }
+  }
+  const first = await page(1)
+  const pages = Math.min(
+    Math.ceil(Math.min(first.totalHits, 500) / PER_PAGE),
+    Math.ceil(limit / PER_PAGE),
+  )
+  const rest = await Promise.allSettled(
+    Array.from({ length: Math.max(0, pages - 1) }, (_, i) => page(i + 2)),
+  )
+  const hits = [
+    ...first.hits,
+    ...rest.flatMap((r) => (r.status === 'fulfilled' ? r.value.hits : [])),
+  ]
+  return hits.map(
     (h): SearchImage => ({
       id: `x-${h.id}`,
       source: 'Pixabay',
-      thumb: h.webformatURL, // 640 px
+      thumb: h.webformatURL.replace('_640', '_340'), // light, enough for the tiles
       fallback: h.previewURL,
       full: h.webformatURL.replace('_640', '_960'),
       page: h.pageURL,
@@ -188,8 +221,8 @@ const interleave = <T>(a: T[], b: T[]) => {
 }
 
 /**
- * Unsplash + Pexels (best photos, interleaved, placed first = centre of the wall),
- * then Pixabay to fill up to `limit`. Any source can fail without breaking the search.
+ * Unsplash (60) + Pexels (up to 400), interleaved and placed first (centre of the
+ * wall), then Pixabay (up to 500) to fill up to `limit` (1000 desktop / 600 mobile). Any source can fail without breaking the search.
  */
 export async function searchAll(
   query: string,
@@ -199,8 +232,8 @@ export async function searchAll(
   const q = query.trim()
   const settled = await Promise.allSettled([
     searchUnsplash(q, signal),
-    searchPexels(q, signal),
-    searchPixabay(q, 100, signal),
+    searchPexels(q, Math.min(400, limit), signal),
+    searchPixabay(q, Math.min(500, limit), signal),
   ])
   const names: SourceName[] = ['Unsplash', 'Pexels', 'Pixabay']
   const failures: SearchResult['failures'] = []

@@ -124,35 +124,85 @@ export class Atlas {
     })
   }
 
+  /**
+   * Which image goes in which tile: results in rank order fill the tiles from
+   * the centre of the screen outward (the centre subgrid = first layer), and
+   * repeat if there are fewer images than tiles.
+   */
+  arrange(images: SearchImage[]): SearchImage[] {
+    const n = images.length
+    const v = this.versions[0]
+    const perLayer = v.cols * v.rows
+    const cx = (v.cols - 1) / 2
+    const cy = (v.rows - 1) / 2
+    const order = Array.from({ length: this.capacity }, (_, t) => t).sort(
+      (a, b) => this.tileRank(a, perLayer, cx, cy) - this.tileRank(b, perLayer, cx, cy),
+    )
+    const tiles: SearchImage[] = new Array(this.capacity)
+    order.forEach((t, k) => {
+      tiles[t] = images[k % n]
+    })
+    return tiles
+  }
+
+  private tileRank(t: number, perLayer: number, cx: number, cy: number) {
+    const v = this.versions[0]
+    const layer = Math.floor(t / perLayer)
+    const idx = t % perLayer
+    // cells are 2:3, so a row step is 1.5× a column step
+    const dx = (idx % v.cols) - cx
+    const dy = (Math.floor(idx / v.cols) - cy) * 1.5
+    return layer * 1e6 + dx * dx + dy * dy
+  }
+
+  /**
+   * Loads every image of `tiles` (as returned by arrange) once, in rank order
+   * (centre first), and uploads it into all of its tiles.
+   */
   async fill(
-    images: SearchImage[],
+    tiles: SearchImage[],
     {
       signal,
       onProgress,
-      concurrency = 8,
+      concurrency = 16,
     }: {
       signal?: AbortSignal
       onProgress?: (loaded: number, total: number) => void
       concurrency?: number
     } = {},
   ) {
-    const n = images.length
+    // unique images, each with its tiles, ordered by their best tile rank
+    const byImage = new Map<SearchImage, number[]>()
+    const v = this.versions[0]
+    const perLayer = v.cols * v.rows
+    const cx = (v.cols - 1) / 2
+    const cy = (v.rows - 1) / 2
+    tiles
+      .map((img, t) => ({ img, t, r: this.tileRank(t, perLayer, cx, cy) }))
+      .sort((a, b) => a.r - b.r)
+      .forEach(({ img, t }) => {
+        if (!img) return
+        const list = byImage.get(img)
+        if (list) list.push(t)
+        else byImage.set(img, [t])
+      })
+    const queue = [...byImage.entries()]
+    const n = queue.length
     if (!n) return 0
     let next = 0
     let loaded = 0
 
     const worker = async () => {
       while (next < n && !signal?.aborted) {
-        const i = next++
-        const img = images[i]
+        const [img, tileList] = queue[next++]
         try {
           const bmp = await decode(img.thumb, signal).catch((e) => {
             if (!img.fallback || signal?.aborted) throw e
             return decode(img.fallback, signal)
           })
           if (signal?.aborted) return
-          const tiles = this.tilesFor(bmp)
-          for (let t = i; t < this.capacity; t += n) this.place(tiles, t)
+          const tileCanvases = this.tilesFor(bmp)
+          tileList.forEach((t) => this.place(tileCanvases, t))
           loaded++
           onProgress?.(loaded, n)
         } catch (e) {

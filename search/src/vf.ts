@@ -15,22 +15,33 @@ import {
 import type { VoroforceCell, VoroforceInstance } from '@/vf/types'
 import type { AtlasVersion } from './atlas'
 
-export const MEDIA_COLS = 10
-export const MEDIA_ROWS = 10
-export const MEDIA_LAYERS = 2
-export const MEDIA_CAPACITY = MEDIA_COLS * MEDIA_ROWS * MEDIA_LAYERS // 200 tiles
-
 const params = new URLSearchParams(window.location.search)
 const mobile = isTouchDevice || window.innerWidth < 768
 
+// Dense wall like the original site: up to 1000 different images (600 on
+// mobile), one per cell. ?size=… switches back to big cells.
+export const MEDIA_COLS = mobile ? 20 : 25
+export const MEDIA_ROWS = mobile ? 15 : 20
+export const MEDIA_LAYERS = 2
+export const MEDIA_CAPACITY = MEDIA_COLS * MEDIA_ROWS * MEDIA_LAYERS // 1000 / 600 tiles
+
 // low / mid / high resolution versions of the same atlas (the engine picks the
-// version per cell depending on how close it is to the pointer)
-export const ATLAS_VERSIONS: AtlasVersion[] = [
-  { tileWidth: 40, tileHeight: 60 },
-  { tileWidth: 100, tileHeight: 150 },
-  // sharpest version, used around the pointer / for the selected cell
-  mobile ? { tileWidth: 160, tileHeight: 240 } : { tileWidth: 200, tileHeight: 300 },
-].map((t) => ({ ...t, cols: MEDIA_COLS, rows: MEDIA_ROWS, layers: MEDIA_LAYERS }))
+// version per cell depending on how close it is to the pointer). GPU memory:
+// ~120 MB desktop, ~50 MB mobile.
+export const ATLAS_VERSIONS: AtlasVersion[] = (
+  mobile
+    ? [
+        { tileWidth: 30, tileHeight: 45 },
+        { tileWidth: 60, tileHeight: 90 },
+        { tileWidth: 100, tileHeight: 150 },
+      ]
+    : [
+        { tileWidth: 40, tileHeight: 60 },
+        { tileWidth: 64, tileHeight: 96 },
+        // sharpest version, used around the pointer / for the selected cell
+        { tileWidth: 120, tileHeight: 180 },
+      ]
+).map((t) => ({ ...t, cols: MEDIA_COLS, rows: MEDIA_ROWS, layers: MEDIA_LAYERS }))
 
 const mediaConfig = {
   enabled: true,
@@ -86,20 +97,16 @@ export function createEngine(container: HTMLElement): Engine {
   const cellsParam = Number.parseInt(params.get('cells') ?? '')
   config.cells = Number.isFinite(cellsParam)
     ? Math.max(MEDIA_CAPACITY, cellsParam)
-    : mobile
-      ? 600
-      : 1000
+    : MEDIA_CAPACITY
   config.media = mediaConfig
-  // big cells like the original site after its intro (≈7.5% of the viewport)
+  // default: the lattice exactly covers the screen (dense wall, every image
+  // visible). ?size=5.5 → big cells (% of the viewport) extending off-screen.
   const sizeParam = Number.parseFloat(params.get('size') ?? '')
   config.lattice = {
     ...config.lattice,
     targetCellSizeViewportPercentage: Number.isFinite(sizeParam)
       ? sizeParam / 100
-      : mobile
-        ? 0.085
-        : 0.055,
-    autoTargetMediaVersion1SubgridCount: 100,
+      : undefined,
   }
   // Simulation in Web Workers (like the original site) needs SharedArrayBuffer,
   // i.e. a cross-origin isolated page: coi-serviceworker.js provides it on GitHub Pages.

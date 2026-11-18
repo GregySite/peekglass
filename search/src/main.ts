@@ -66,14 +66,15 @@ const atlas = new Atlas(ATLAS_VERSIONS, {
 })
 atlas.clear()
 
-let results: SearchImage[] = []
+let results: SearchImage[] = [] // search results, rank order
+let tileImages: SearchImage[] = [] // image shown in each atlas tile
 let controller: AbortController | undefined
 let currentQuery = ''
 
 const imageForCell = (cell?: VoroforceCell): SearchImage | undefined => {
-  if (!cell || !results.length) return
+  if (!cell || !tileImages.length) return
   const id = (cell as unknown as { id: number }).id ?? 0
-  return results[(id % MEDIA_CAPACITY) % results.length]
+  return tileImages[id % MEDIA_CAPACITY]
 }
 
 const setStatus = (text: string, error = false) => {
@@ -222,10 +223,11 @@ async function runSearch(query: string, { push = true } = {}) {
   closeCard()
   caption.classList.remove('on')
   results = found
+  tileImages = atlas.arrange(found)
   atlas.clear()
   engine.shake()
 
-  const loaded = await atlas.fill(found, {
+  const loaded = await atlas.fill(tileImages, {
     signal: ctrl.signal,
     onProgress: (n, total) => {
       setProgress(0.1 + 0.9 * (n / total))
